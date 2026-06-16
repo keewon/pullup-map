@@ -121,7 +121,7 @@ npx wrangler pages deploy ../frontend --project-name pullup-map --commit-dirty=t
 cd backend && npm run deploy
 
 # 프론트엔드
-cd backend && npx wrangler pages deploy ../frontend --project-name pullup-map --commit-dirty=true
+cd backend && npx wrangler pages deploy ../frontend --project-name pullup-map --branch=production --commit-dirty=true
 ```
 
 ---
