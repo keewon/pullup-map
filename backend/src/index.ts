@@ -225,7 +225,7 @@ async function handleList(url: URL, env: Env, request: Request): Promise<Respons
 
   const role = await getRole(request, env);
   const uid = url.searchParams.get('uid') ?? '';
-  const includePending = role !== 'user' && url.searchParams.get('includePending') === '1';
+  const includePending = role === 'admin' && url.searchParams.get('includePending') === '1';
 
   const cols = `id, uid, lat, lng, image_key, status, name, uploader_role, taken_at, created_at`;
   const boundsCondition = `lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?`;
@@ -233,7 +233,7 @@ async function handleList(url: URL, env: Env, request: Request): Promise<Respons
   let query: string;
   let bindArgs: (string | number)[];
 
-  if (role !== 'user') {
+  if (role === 'admin') {
     const statusCondition = includePending ? `status IN ('approved', 'pending')` : `status = 'approved'`;
     query = `SELECT ${cols} FROM photos WHERE ${statusCondition} AND ${boundsCondition} ORDER BY created_at DESC LIMIT 500`;
     bindArgs = [minLat, maxLat, minLng, maxLng];
@@ -254,6 +254,7 @@ async function handleList(url: URL, env: Env, request: Request): Promise<Respons
   return json(results.map(r => ({
     id: r.id,
     uid_short: r.uid.slice(0, 4),
+    is_own: uid ? r.uid === uid : false,
     lat: r.lat,
     lng: r.lng,
     imageUrl: `${env.R2_PUBLIC_URL}/${r.image_key}`,
@@ -267,7 +268,7 @@ async function handleList(url: URL, env: Env, request: Request): Promise<Respons
 
 async function handlePending(request: Request, env: Env): Promise<Response> {
   const role = await getRole(request, env);
-  if (role === 'user') return json({ error: 'Forbidden' }, 403);
+  if (role !== 'admin') return json({ error: 'Forbidden' }, 403);
 
   const { results } = await env.DB.prepare(
     `SELECT id, uid, lat, lng, image_key, created_at FROM photos
@@ -293,7 +294,7 @@ async function handleModerate(
   action: 'approve' | 'reject'
 ): Promise<Response> {
   const role = await getRole(request, env);
-  if (role === 'user') return json({ error: 'Forbidden' }, 403);
+  if (role !== 'admin') return json({ error: 'Forbidden' }, 403);
 
   let reason = '';
   if (action === 'reject') {
@@ -318,7 +319,7 @@ async function handleModerate(
 
 async function handleAdminPhotos(request: Request, env: Env): Promise<Response> {
   const role = await getRole(request, env);
-  if (role === 'user') return json({ error: 'Forbidden' }, 403);
+  if (role !== 'admin') return json({ error: 'Forbidden' }, 403);
 
   const url = new URL(request.url);
   const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '30'), 50);
@@ -363,7 +364,7 @@ async function handleDelete(request: Request, env: Env, id: number): Promise<Res
   const uid  = url.searchParams.get('uid') ?? '';
 
   let photo: PhotoRow | null;
-  if (role === 'admin' || role === 'power') {
+  if (role === 'admin') {
     photo = await env.DB.prepare(`SELECT * FROM photos WHERE id = ?`).bind(id).first<PhotoRow>();
   } else {
     if (!uid) return json({ error: 'Missing uid' }, 400);
@@ -380,21 +381,29 @@ async function handleDelete(request: Request, env: Env, id: number): Promise<Res
 
 async function handleMove(request: Request, env: Env, id: number): Promise<Response> {
   const role = await getRole(request, env);
-  if (role === 'user') return json({ error: 'Forbidden' }, 403);
 
-  let body: { lat?: unknown; lng?: unknown };
-  try { body = await request.json() as { lat?: unknown; lng?: unknown }; } catch { return json({ error: 'Invalid JSON' }, 400); }
+  let body: { lat?: unknown; lng?: unknown; uid?: unknown };
+  try { body = await request.json() as { lat?: unknown; lng?: unknown; uid?: unknown }; } catch { return json({ error: 'Invalid JSON' }, 400); }
 
   const lat = Number(body.lat);
   const lng = Number(body.lng);
   if (isNaN(lat) || lat < -90  || lat > 90)  return json({ error: 'Invalid lat' }, 400);
   if (isNaN(lng) || lng < -180 || lng > 180) return json({ error: 'Invalid lng' }, 400);
 
-  const result = await env.DB.prepare(
-    `UPDATE photos SET lat = ?, lng = ? WHERE id = ?`
-  ).bind(lat, lng, id).run();
+  let result;
+  if (role === 'admin') {
+    result = await env.DB.prepare(
+      `UPDATE photos SET lat = ?, lng = ? WHERE id = ?`
+    ).bind(lat, lng, id).run();
+  } else {
+    const uid = ((body.uid ?? '') + '').trim();
+    if (!uid) return json({ error: 'Missing uid' }, 400);
+    result = await env.DB.prepare(
+      `UPDATE photos SET lat = ?, lng = ? WHERE id = ? AND uid = ?`
+    ).bind(lat, lng, id, uid).run();
+  }
 
-  if (result.meta.changes === 0) return json({ error: 'Not found' }, 404);
+  if (result.meta.changes === 0) return json({ error: 'Not found or not yours' }, 404);
   return json({ success: true });
 }
 

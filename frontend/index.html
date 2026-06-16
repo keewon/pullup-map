@@ -798,12 +798,11 @@
       const cid = `c${++carouselSeq}`;
       popupDataMap.set(cid, { photos, currentIdx: 0 });
 
-      const adminBtns = userRole !== 'user'
-        ? `<div class="popup-actions" data-cid="${cid}">
+      const actionBtns = (canAct) =>
+        canAct ? `<div class="popup-actions" data-cid="${cid}">
              <button class="pa-btn pa-loc">📍 위치 수정</button>
              <button class="pa-btn pa-del">🗑️ 삭제</button>
-           </div>`
-        : '';
+           </div>` : '';
 
       if (photos.length === 1) {
         const p = photos[0];
@@ -812,21 +811,27 @@
             <img src="${escHtml(p.imageUrl)}" loading="lazy" style="width:170px;height:170px;object-fit:cover;display:block" />
             ${photoOverlay(p)}
           </div>
-          ${adminBtns}
+          ${actionBtns(userRole === 'admin' || p.is_own)}
         </div>`;
       }
 
       const slides = photos.map(p =>
-        `<div class="carousel-slide">
+        `<div class="carousel-slide" data-is-own="${p.is_own ? '1' : '0'}">
           <img class="carousel-img" src="${escHtml(p.imageUrl)}" loading="lazy" />
           ${photoOverlay(p)}
         </div>`
       ).join('');
 
+      const firstCanAct = userRole === 'admin' || photos[0].is_own;
+      const hasAny = userRole === 'admin' || photos.some(p => p.is_own);
+
       return `<div class="popup-inner">
         <div class="carousel-track" id="${cid}">${slides}</div>
         <div class="carousel-counter" id="${cid}-n">1 / ${photos.length}</div>
-        ${adminBtns}
+        ${hasAny ? `<div class="popup-actions" data-cid="${cid}" ${firstCanAct ? '' : 'style="display:none"'}>
+             <button class="pa-btn pa-loc">📍 위치 수정</button>
+             <button class="pa-btn pa-del">🗑️  삭제</button>
+           </div>` : ''}
       </div>`;
     }
 
@@ -846,7 +851,20 @@
         }, { passive: true });
       }
 
-      // Admin action buttons
+      // Carousel: update action buttons visibility on scroll
+      if (track) {
+        const actionsEl = popupEl?.querySelector('.popup-actions');
+        if (actionsEl) {
+          track.addEventListener('scroll', () => {
+            const idx = Math.round(track.scrollLeft / track.clientWidth);
+            const slide = track.children[idx];
+            const canAct = userRole === 'admin' || slide?.dataset.isOwn === '1';
+            actionsEl.style.display = canAct ? '' : 'none';
+          }, { passive: true });
+        }
+      }
+
+      // Action buttons
       const actions = popupEl?.querySelector('.popup-actions');
       if (!actions) return;
       const cid = actions.dataset.cid;
@@ -857,7 +875,7 @@
         const photo = data.photos[data.currentIdx];
         if (!confirm('이 사진을 삭제할까요?')) return;
         showLoading('삭제 중…');
-        const res = await fetch(`${API}/photos/${photo.id}`, { method: 'DELETE', headers: authHeaders() });
+        const res = await fetch(`${API}/photos/${photo.id}?uid=${encodeURIComponent(myUid)}`, { method: 'DELETE', headers: authHeaders() });
         hideLoading();
         if (res.ok) { map.closePopup(); fetchPhotos(); toast('🗑️ 삭제됐습니다.'); }
         else { const d = await res.json(); toast(`오류: ${d.error}`); }
@@ -896,7 +914,7 @@
         maxLng: b.getEast().toFixed(7),
         uid: myUid,
       });
-      if (userRole !== 'user') params.set('includePending', '1');
+      if (userRole === 'admin') params.set('includePending', '1');
 
       try {
         const res = await fetch(`${API}/photos?${params}`, { headers: authHeaders() });
@@ -976,7 +994,7 @@
         const res = await fetch(`${API}/photos/${pendingLocationEdit.id}/move`, {
           method: 'POST',
           headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lat: center.lat, lng: center.lng }),
+          body: JSON.stringify({ lat: center.lat, lng: center.lng, uid: myUid }),
         });
         hideLoading();
         if (res.ok) { toast('📍 위치가 수정됐습니다.'); fetchPhotos(); }
@@ -1010,7 +1028,7 @@
     }
 
     function updateAdminBtn() {
-      document.getElementById('btn-admin').style.display = userRole !== 'user' ? 'flex' : 'none';
+      document.getElementById('btn-admin').style.display = userRole === 'admin' ? 'flex' : 'none';
     }
 
     (async () => { await refreshRole(); updateAdminBtn(); })();
