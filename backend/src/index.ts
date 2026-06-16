@@ -189,12 +189,19 @@ async function handleUpload(request: Request, env: Env): Promise<Response> {
   if (!image || image.size === 0)            return json({ error: 'Missing image' }, 400);
   if (image.size > MAX_IMAGE_SIZE)           return json({ error: 'Image too large (max 2MB)' }, 400);
 
-  if (role === 'user') {
-    const rateRow = await env.DB.prepare(
-      `SELECT COUNT(*) as count FROM photos WHERE uid = ? AND created_at >= datetime('now', '-1 day')`
-    ).bind(uid).first<{ count: number }>();
+  const ip = request.headers.get('CF-Connecting-IP') ?? request.headers.get('X-Forwarded-For')?.split(',')[0].trim() ?? '';
 
-    if ((rateRow?.count ?? 0) >= RATE_LIMIT_PER_DAY) {
+  if (role === 'user') {
+    const [uidRow, ipRow] = await Promise.all([
+      env.DB.prepare(
+        `SELECT COUNT(*) as count FROM photos WHERE uid = ? AND created_at >= datetime('now', '-1 day')`
+      ).bind(uid).first<{ count: number }>(),
+      ip ? env.DB.prepare(
+        `SELECT COUNT(*) as count FROM photos WHERE ip = ? AND created_at >= datetime('now', '-1 day')`
+      ).bind(ip).first<{ count: number }>() : Promise.resolve(null),
+    ]);
+
+    if ((uidRow?.count ?? 0) >= RATE_LIMIT_PER_DAY || (ipRow?.count ?? 0) >= RATE_LIMIT_PER_DAY) {
       return json({ error: '하루 3개까지만 업로드할 수 있습니다.' }, 429);
     }
   }
@@ -207,8 +214,8 @@ async function handleUpload(request: Request, env: Env): Promise<Response> {
   const status = role === 'user' ? 'pending' : 'approved';
 
   const result = await env.DB.prepare(
-    `INSERT INTO photos (uid, lat, lng, image_key, status, name, uploader_role, taken_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(uid, lat, lng, imageKey, status, name, role, takenAt).run();
+    `INSERT INTO photos (uid, lat, lng, image_key, status, name, uploader_role, taken_at, ip) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(uid, lat, lng, imageKey, status, name, role, takenAt, ip || null).run();
 
   return json({ id: result.meta.last_row_id, status }, 201);
 }

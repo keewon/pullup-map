@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS photos (
   name           TEXT    NOT NULL DEFAULT '',
   uploader_role  TEXT    NOT NULL DEFAULT 'user',
   taken_at       TEXT,
-  created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
+  created_at     TEXT    NOT NULL DEFAULT (datetime('now')),
+  ip             TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_photos_status_loc ON photos (status, lat, lng);

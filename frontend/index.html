@@ -1183,7 +1183,7 @@
           item.className = 'pending-item';
           item.dataset.id = p.id;
           item.innerHTML = `
-            <img class="pending-thumb" src="${p.imageUrl}" loading="lazy" />
+            <img class="pending-thumb" src="${escHtml(p.imageUrl)}" loading="lazy" />
             <div class="pending-meta">
               <div class="coords">📍 ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}<br>🕐 ${formatDate(p.created_at)}<br>👤 ${p.uid.slice(0, 8)}…</div>
               <div class="actions">
