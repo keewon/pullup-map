@@ -1,0 +1,1404 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>철봉 지도</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR', sans-serif; }
+
+    #map { height: 100dvh; width: 100%; }
+
+    /* ── Title bar ── */
+    #title-bar {
+      position: fixed;
+      top: 14px;
+      left: 14px;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255,255,255,0.92);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      border-radius: 20px;
+      padding: 6px 12px 6px 14px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      cursor: pointer;
+      user-select: none;
+      transition: opacity 0.15s;
+    }
+    #title-bar:active { opacity: 0.7; }
+    #title-text {
+      font-size: 15px;
+      font-weight: 700;
+      color: #222;
+      letter-spacing: -0.3px;
+    }
+    #btn-info {
+      font-size: 17px;
+      color: #888;
+      line-height: 1;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      #title-bar { background: rgba(30,30,30,0.92); }
+      #title-text { color: #f0f0f0; }
+      #btn-info { color: #888; }
+    }
+
+    /* ── FAB ── */
+    .fab {
+      position: fixed;
+      right: 20px;
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      font-size: 22px;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.25);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.15s, opacity 0.15s;
+    }
+    .fab:active { transform: scale(0.93); }
+
+    #btn-upload { bottom: 24px; background: #27ae60; color: #fff; }
+    #btn-admin  { bottom: 88px; background: #2980b9; color: #fff; }
+    #btn-locate { bottom: 152px; background: #fff; color: #333; font-size: 20px; }
+    @media (prefers-color-scheme: dark) {
+      #btn-locate { background: #2a2a2a; color: #eee; }
+    }
+
+    /* ── Modal overlay ── */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 2000;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    .sheet {
+      background: #fff;
+      border-radius: 20px 20px 0 0;
+      padding: 20px 20px calc(20px + env(safe-area-inset-bottom));
+      width: 100%;
+      max-width: 500px;
+      max-height: 88vh;
+      overflow-y: auto;
+    }
+
+    .sheet-handle {
+      width: 36px;
+      height: 4px;
+      background: #ddd;
+      border-radius: 2px;
+      margin: 0 auto 18px;
+    }
+
+    .sheet h2 { font-size: 17px; font-weight: 600; margin-bottom: 14px; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 13px 20px;
+      border-radius: 12px;
+      border: none;
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 500;
+      transition: opacity 0.1s;
+    }
+    .btn:active { opacity: 0.75; }
+    .btn:disabled { opacity: 0.4; cursor: default; }
+    .btn-green  { background: #27ae60; color: #fff; }
+    .btn-red    { background: #e74c3c; color: #fff; }
+    .btn-grey   { background: #f0f0f0; color: #333; }
+    .btn-blue   { background: #2980b9; color: #fff; }
+    .btn-full   { width: 100%; }
+
+    /* ── Upload preview ── */
+    #preview-wrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #eee;
+      margin-bottom: 12px;
+    }
+    #preview-image {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .name-input {
+      width: 100%;
+      padding: 11px 14px;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 10px;
+      font-size: 15px;
+      margin-bottom: 10px;
+      outline: none;
+      background: #fff;
+      color: #333;
+      transition: border-color 0.15s;
+    }
+    .name-input:focus { border-color: #27ae60; }
+
+    .info-box {
+      background: #f6f6f6;
+      border-radius: 10px;
+      padding: 11px 14px;
+      margin-bottom: 14px;
+      font-size: 14px;
+      color: #555;
+      line-height: 1.5;
+    }
+
+    .row { display: flex; gap: 10px; }
+    .row .btn { flex: 1; }
+
+    /* ── Admin pending list ── */
+    .pending-item {
+      display: flex;
+      gap: 12px;
+      padding: 12px 0;
+      border-bottom: 1px solid #f0f0f0;
+      align-items: flex-start;
+    }
+    .pending-item:last-child { border-bottom: none; }
+
+    .pending-thumb {
+      width: 76px;
+      height: 76px;
+      object-fit: cover;
+      border-radius: 10px;
+      flex-shrink: 0;
+      background: #eee;
+    }
+
+    .pending-meta {
+      flex: 1;
+      min-width: 0;
+    }
+    .pending-meta .coords {
+      font-size: 13px;
+      color: #888;
+      margin-bottom: 8px;
+      line-height: 1.5;
+    }
+    .pending-meta .actions { display: flex; gap: 8px; }
+    .pending-meta .actions button {
+      flex: 1;
+      padding: 7px 0;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .btn-approve { background: #d5e8d4; color: #27ae60; }
+    .btn-reject  { background: #fde8e8; color: #e74c3c; }
+    .btn-approve:disabled, .btn-reject:disabled { opacity: 0.5; cursor: default; }
+
+    /* ── Location picker ── */
+    #picker-map { width: 100%; height: 100%; }
+    .picker-crosshair {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -100%);
+      font-size: 34px;
+      pointer-events: none;
+      z-index: 1000;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
+      line-height: 1;
+    }
+
+    .empty-msg {
+      text-align: center;
+      padding: 32px 0;
+      color: #aaa;
+      font-size: 14px;
+    }
+
+    /* ── Tabs ── */
+    .tab-bar {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 16px;
+      border-bottom: 1.5px solid #f0f0f0;
+      padding-bottom: 0;
+    }
+    .tab {
+      flex: 1;
+      padding: 9px 0;
+      border: none;
+      background: none;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      color: #aaa;
+      border-bottom: 2.5px solid transparent;
+      margin-bottom: -1.5px;
+      transition: color 0.15s;
+    }
+    .tab.active { color: #2980b9; border-bottom-color: #2980b9; }
+
+    /* ── Token management ── */
+    .token-form { margin-bottom: 16px; }
+    .token-form .token-field { margin-bottom: 8px; }
+
+    .token-select {
+      flex: 1;
+      padding: 11px 10px;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 10px;
+      font-size: 14px;
+      background: #fff;
+      outline: none;
+    }
+
+    .token-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .token-item:last-child { border-bottom: none; }
+    .token-item-info { flex: 1; min-width: 0; }
+    .token-item-memo { font-size: 14px; font-weight: 500; margin-bottom: 3px; }
+    .token-item-val {
+      font-size: 12px;
+      color: #888;
+      font-family: monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .token-item-del {
+      background: #fde8e8;
+      color: #e74c3c;
+      border: none;
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 13px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .token-item-del:disabled { opacity: 0.4; cursor: default; }
+
+    @media (prefers-color-scheme: dark) {
+      .tab-bar { border-color: #2c2c2e; }
+      .tab { color: #666; }
+      .tab.active { color: #4ea6dc; border-bottom-color: #4ea6dc; }
+      .token-select { background: #2c2c2e; color: #f0f0f0; border-color: #3a3a3c; }
+      .token-item { border-color: #2c2c2e; }
+      .token-item-val { color: #666; }
+    }
+
+    /* ── Popup ── */
+    .popup-inner { text-align: center; }
+    .popup-inner img {
+      width: 170px;
+      height: 170px;
+      object-fit: cover;
+      border-radius: 10px;
+      display: block;
+    }
+    .popup-inner .badge { font-size: 12px; color: #e67e22; font-weight: 500; margin-top: 4px; }
+
+    /* ── Carousel ── */
+    .carousel-track {
+      display: flex;
+      width: 170px;
+      height: 170px;
+      overflow-x: scroll;
+      scroll-snap-type: x mandatory;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      border-radius: 10px;
+    }
+    .carousel-track::-webkit-scrollbar { display: none; }
+    .carousel-slide {
+      position: relative;
+      width: 170px;
+      height: 170px;
+      flex-shrink: 0;
+      scroll-snap-align: start;
+    }
+    .carousel-img {
+      width: 170px;
+      height: 170px;
+      object-fit: cover;
+      display: block;
+    }
+    .photo-date {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 18px 8px 6px;
+      background: linear-gradient(transparent, rgba(0,0,0,0.55));
+      color: #fff;
+      font-size: 11px;
+      text-align: center;
+      pointer-events: none;
+    }
+    .carousel-counter {
+      text-align: center;
+      margin-top: 5px;
+      font-size: 12px;
+      color: #888;
+    }
+
+    /* ── Photo grid (전체 사진 탭) ── */
+    .photo-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 3px;
+    }
+    .pg-item {
+      position: relative;
+      aspect-ratio: 1;
+      cursor: pointer;
+      border-radius: 4px;
+      overflow: hidden;
+      background: #eee;
+      transition: opacity 0.1s;
+    }
+    .pg-item:active { opacity: 0.75; }
+    .pg-thumb { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .pg-badge {
+      position: absolute;
+      bottom: 3px;
+      right: 3px;
+      font-size: 11px;
+      background: rgba(0,0,0,0.55);
+      color: #fff;
+      border-radius: 3px;
+      padding: 1px 4px;
+      line-height: 1.4;
+    }
+
+    /* ── Reject reason inline input ── */
+    .reject-reason-input {
+      flex: 1;
+      min-width: 0;
+      padding: 5px 8px;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 12px;
+      background: #fff;
+      color: #333;
+      outline: none;
+    }
+    .reject-reason-input:focus { border-color: #e74c3c; }
+
+    @media (prefers-color-scheme: dark) {
+      .pg-item { background: #2c2c2e; }
+      .reject-reason-input { background: #2c2c2e; color: #f0f0f0; border-color: #3a3a3c; }
+      #lightbox-meta { color: #aaa; }
+    }
+
+    /* ── Popup admin actions ── */
+    .popup-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 7px;
+    }
+    .pa-btn {
+      flex: 1;
+      padding: 6px 0;
+      border: none;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.1s;
+    }
+    .pa-btn:active { opacity: 0.7; }
+    .pa-loc { background: #eaf2fb; color: #2980b9; }
+    .pa-del { background: #fde8e8; color: #e74c3c; }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed;
+      bottom: calc(96px + env(safe-area-inset-bottom));
+      left: 50%;
+      transform: translateX(-50%) translateY(10px);
+      background: rgba(30,30,30,0.9);
+      color: #fff;
+      padding: 10px 18px;
+      border-radius: 22px;
+      font-size: 14px;
+      z-index: 4000;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.25s, transform 0.25s;
+      white-space: nowrap;
+      max-width: calc(100vw - 40px);
+      text-align: center;
+    }
+    #toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* ── Loading overlay ── */
+    #loading {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 5000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+    #loading.show { display: flex; }
+    .loading-box {
+      background: #fff;
+      border-radius: 16px;
+      padding: 24px 32px;
+      text-align: center;
+      font-size: 15px;
+      color: #333;
+    }
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid #e0e0e0;
+      border-top-color: #27ae60;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin: 0 auto 12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Dark mode ── */
+    @media (prefers-color-scheme: dark) {
+      #overlay-info p { color: #aaa; }
+      .sheet { background: #1c1c1e; color: #f0f0f0; }
+      .sheet-handle { background: #3a3a3c; }
+      .info-box { background: #2c2c2e; color: #aaa; }
+      .btn-grey { background: #2c2c2e; color: #eee; }
+      .pending-item { border-color: #2c2c2e; }
+      .pending-meta .coords { color: #888; }
+      .loading-box { background: #2c2c2e; color: #f0f0f0; }
+      .spinner { border-color: #3a3a3c; border-top-color: #27ae60; }
+      #preview-wrap { background: #2c2c2e; }
+      .name-input { background: #2c2c2e; color: #f0f0f0; border-color: #3a3a3c; }
+      .name-input:focus { border-color: #27ae60; }
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div id="title-bar" title="서비스 안내">
+    <span id="title-text">철봉지도</span>
+    <span id="btn-info">ⓘ</span>
+  </div>
+
+  <!-- Info dialog -->
+  <div id="overlay-info" class="overlay" style="display:none;align-items:center;justify-content:center;padding:24px">
+    <div class="sheet" style="border-radius:16px;max-width:320px;padding:24px">
+      <h2 style="margin-bottom:14px">철봉지도 안내</h2>
+      <p style="font-size:15px;line-height:1.7;color:#555">
+        철봉 사진을 올려서 철봉 위치를 같이 공유해요.<br>
+        사진은 관리자 검토 후 표시 됩니다.<br>
+        많은 활동 해주시면 등업 해드립니다.
+      </p>
+      <button class="btn btn-grey btn-full" id="btn-close-info" style="margin-top:18px">확인</button>
+    </div>
+  </div>
+
+  <button id="btn-upload" class="fab" title="철봉 사진 올리기">＋</button>
+  <button id="btn-admin" class="fab" style="display:none" title="승인 관리">📋</button>
+  <button id="btn-locate" class="fab" title="내 위치로">📡</button>
+
+  <input type="file" id="file-input" accept="image/*" style="display:none" />
+
+  <!-- Upload preview sheet -->
+  <div id="overlay-upload" class="overlay" style="display:none">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <h2>철봉 사진 올리기</h2>
+      <div id="preview-wrap"><img id="preview-image" src="" alt="" /></div>
+      <input type="text" id="upload-name" class="name-input" placeholder="닉네임 (선택, 최대 20자)" maxlength="20" autocomplete="nickname" />
+      <div class="info-box" id="location-info">위치 정보를 읽는 중…</div>
+      <div class="row">
+        <button class="btn btn-grey" id="btn-cancel-upload">취소</button>
+        <button class="btn btn-green" id="btn-confirm-upload" disabled>업로드</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Location picker sheet -->
+  <div id="overlay-location" class="overlay" style="display:none">
+    <div class="sheet" style="height:78vh;display:flex;flex-direction:column">
+      <div class="sheet-handle"></div>
+      <h2>📍 위치 지정</h2>
+      <p style="font-size:13px;color:#888;margin-bottom:10px">지도를 움직여 철봉 위치를 핀에 맞춰주세요</p>
+      <div style="position:relative;flex:1;border-radius:12px;overflow:hidden;min-height:0">
+        <div id="picker-map"></div>
+        <div class="picker-crosshair">📍</div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn btn-grey" id="btn-cancel-location">취소</button>
+        <button class="btn btn-green" id="btn-confirm-location">이 위치로 설정</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Admin panel sheet -->
+  <div id="overlay-admin" class="overlay" style="display:none">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="tab-bar">
+        <button class="tab active" id="tab-pending">📋 승인 대기</button>
+        <button class="tab" id="tab-allphotos">📷 전체</button>
+        <button class="tab" id="tab-tokens" style="display:none">🔑 토큰</button>
+      </div>
+
+      <div id="section-pending">
+        <div id="pending-list"><div class="empty-msg">로딩 중…</div></div>
+      </div>
+
+      <div id="section-allphotos" style="display:none">
+        <div id="allphotos-grid" class="photo-grid"></div>
+        <button class="btn btn-grey btn-full" id="btn-load-more-photos" style="margin-top:10px;display:none">더 보기</button>
+      </div>
+
+      <div id="section-tokens" style="display:none">
+        <div id="token-list"><div class="empty-msg">로딩 중…</div></div>
+      </div>
+
+      <div style="margin-top:14px">
+        <button class="btn btn-grey btn-full" id="btn-close-admin">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lightbox -->
+  <div id="overlay-lightbox" class="overlay" style="display:none;background:rgba(0,0,0,0.92);align-items:center;justify-content:center;flex-direction:column;padding:20px">
+    <img id="lightbox-img" style="max-width:100%;max-height:55vh;object-fit:contain;border-radius:12px;display:block" />
+    <div class="sheet" style="width:100%;max-width:420px;border-radius:16px;padding:16px;margin-top:12px">
+      <div id="lightbox-meta" style="font-size:14px;line-height:1.7;margin-bottom:12px;color:#555"></div>
+      <div class="row">
+        <button class="btn btn-blue" id="lightbox-btn-move">📍 위치 수정</button>
+        <button class="btn btn-red" id="lightbox-btn-del">🗑️ 삭제</button>
+      </div>
+      <button class="btn btn-grey btn-full" id="btn-close-lightbox" style="margin-top:8px">닫기</button>
+    </div>
+  </div>
+
+  <!-- Loading -->
+  <div id="loading">
+    <div class="loading-box">
+      <div class="spinner"></div>
+      <div id="loading-msg">처리 중…</div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.umd.js"></script>
+  <script>
+    /* ── Config ── */
+    const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+      ? 'http://localhost:8787'
+      : 'https://pull-up-api.acidblob.com';
+
+    /* ── State ── */
+    const isFirstVisit = !localStorage.getItem('pullup_uid');
+    let myUid = localStorage.getItem('pullup_uid');
+    if (!myUid) { myUid = crypto.randomUUID(); localStorage.setItem('pullup_uid', myUid); }
+
+    let myToken = localStorage.getItem('pullup_token');
+    if (!myToken) { myToken = crypto.randomUUID(); localStorage.setItem('pullup_token', myToken); }
+
+    let userRole = 'user';
+    let pendingUpload = null;
+    let previewObjectUrl = null;
+    const popupDataMap = new Map(); // cid → { photos, currentIdx }
+    let locationPickerMode = 'upload'; // 'upload' | 'edit'
+    let pendingLocationEdit = null;
+
+    /* ── Map ── */
+    const dark = window.matchMedia('(prefers-color-scheme: dark)');
+
+    const tileDark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+      maxZoom: 19,
+    });
+    const tileLight = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+      maxZoom: 19,
+    });
+
+    const savedView = (() => {
+      try { return JSON.parse(localStorage.getItem('pullup_view') ?? 'null'); } catch { return null; }
+    })();
+    const initCenter = savedView ? [savedView.lat, savedView.lng] : [37.5665, 126.9780];
+    const initZoom   = savedView ? savedView.zoom : 13;
+
+    const map = L.map('map', { zoomControl: false }).setView(initCenter, initZoom);
+    L.control.zoom({ position: 'bottomleft' }).addTo(map);
+
+    map.on('moveend zoomend', () => {
+      const c = map.getCenter();
+      localStorage.setItem('pullup_view', JSON.stringify({ lat: c.lat, lng: c.lng, zoom: map.getZoom() }));
+    });
+
+    function syncTile() {
+      if (dark.matches) { tileLight.remove(); tileDark.addTo(map); }
+      else               { tileDark.remove(); tileLight.addTo(map); }
+    }
+    syncTile();
+    dark.addEventListener('change', syncTile);
+
+    // 저장된 위치가 없으면 현재 위치로 이동
+    if (!savedView) {
+      navigator.geolocation?.getCurrentPosition(
+        p => map.setView([p.coords.latitude, p.coords.longitude], 15),
+        () => {}
+      );
+    }
+
+    document.getElementById('btn-locate').onclick = () => {
+      navigator.geolocation?.getCurrentPosition(
+        p => map.setView([p.coords.latitude, p.coords.longitude], 16),
+        () => alert('위치를 가져올 수 없습니다.')
+      );
+    };
+
+    /* ── Icons ── */
+    const iconApproved = L.divIcon({
+      html: '<div style="font-size:28px;line-height:1;filter:drop-shadow(0 2px 3px rgba(0,0,0,0.35))">📍</div>',
+      className: '', iconSize: [28, 28], iconAnchor: [14, 28], popupAnchor: [0, -28],
+    });
+    const iconPending = L.divIcon({
+      html: '<div style="font-size:24px;line-height:1;opacity:0.5">📍</div>',
+      className: '', iconSize: [24, 24], iconAnchor: [12, 24], popupAnchor: [0, -24],
+    });
+
+    /* ── Markers ── */
+    let markerLayer = L.layerGroup().addTo(map);
+    let carouselSeq = 0;
+
+    function haversine(lat1, lng1, lat2, lng2) {
+      const R = 6371000;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLng = (lng2 - lng1) * Math.PI / 180;
+      const a = Math.sin(dLat/2)**2 +
+        Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) * Math.sin(dLng/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function clusterPhotos(photos) {
+      const clusters = [];
+      for (const p of photos) {
+        const found = clusters.find(c => haversine(p.lat, p.lng, c.lat, c.lng) <= 10);
+        if (found) found.items.push(p);
+        else clusters.push({ lat: p.lat, lng: p.lng, items: [p] });
+      }
+      return clusters;
+    }
+
+    function fmtDate(str) {
+      if (!str) return '';
+      const d = new Date(str.includes('T') ? str : str + 'Z');
+      return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+
+    function photoOverlay(p) {
+      const badge = p.uploader_role === 'admin' ? ' 👑' : p.uploader_role === 'power' ? ' 💪' : '';
+      const idTag = p.uid_short ? ` <span style="opacity:0.7;font-weight:400">(${p.uid_short})</span>` : '';
+      const nameLine = p.name ? `<div style="font-weight:600">${escHtml(p.name)}${idTag}${badge}</div>` : '';
+      const dateStr = p.taken_at || p.created_at;
+      const dateLine = dateStr ? `<div>${fmtDate(dateStr)}</div>` : '';
+      const pendingLine = p.status === 'pending' ? '<div style="margin-top:3px;font-size:11px;opacity:0.85">⏳ 미승인</div>' : '';
+      if (!nameLine && !dateLine && !pendingLine) return '';
+      return `<div class="photo-date">${nameLine}${dateLine}${pendingLine}</div>`;
+    }
+
+    function buildPopupContent(photos) {
+      const cid = `c${++carouselSeq}`;
+      popupDataMap.set(cid, { photos, currentIdx: 0 });
+
+      const adminBtns = userRole !== 'user'
+        ? `<div class="popup-actions" data-cid="${cid}">
+             <button class="pa-btn pa-loc">📍 위치 수정</button>
+             <button class="pa-btn pa-del">🗑️ 삭제</button>
+           </div>`
+        : '';
+
+      if (photos.length === 1) {
+        const p = photos[0];
+        return `<div class="popup-inner">
+          <div style="position:relative;width:170px;height:170px;border-radius:10px;overflow:hidden">
+            <img src="${escHtml(p.imageUrl)}" loading="lazy" style="width:170px;height:170px;object-fit:cover;display:block" />
+            ${photoOverlay(p)}
+          </div>
+          ${adminBtns}
+        </div>`;
+      }
+
+      const slides = photos.map(p =>
+        `<div class="carousel-slide">
+          <img class="carousel-img" src="${escHtml(p.imageUrl)}" loading="lazy" />
+          ${photoOverlay(p)}
+        </div>`
+      ).join('');
+
+      return `<div class="popup-inner">
+        <div class="carousel-track" id="${cid}">${slides}</div>
+        <div class="carousel-counter" id="${cid}-n">1 / ${photos.length}</div>
+        ${adminBtns}
+      </div>`;
+    }
+
+    map.on('popupopen', e => {
+      const popupEl = e.popup.getElement();
+
+      // Carousel scroll tracking
+      const track = popupEl?.querySelector('.carousel-track');
+      if (track) {
+        const counter = document.getElementById(track.id + '-n');
+        const cid = track.id;
+        track.addEventListener('scroll', () => {
+          const idx = Math.round(track.scrollLeft / track.clientWidth);
+          if (counter) counter.textContent = `${idx + 1} / ${track.children.length}`;
+          const d = popupDataMap.get(cid);
+          if (d) d.currentIdx = idx;
+        }, { passive: true });
+      }
+
+      // Admin action buttons
+      const actions = popupEl?.querySelector('.popup-actions');
+      if (!actions) return;
+      const cid = actions.dataset.cid;
+
+      actions.querySelector('.pa-del')?.addEventListener('click', async () => {
+        const data = popupDataMap.get(cid);
+        if (!data) return;
+        const photo = data.photos[data.currentIdx];
+        if (!confirm('이 사진을 삭제할까요?')) return;
+        showLoading('삭제 중…');
+        const res = await fetch(`${API}/photos/${photo.id}`, { method: 'DELETE', headers: authHeaders() });
+        hideLoading();
+        if (res.ok) { map.closePopup(); fetchPhotos(); toast('🗑️ 삭제됐습니다.'); }
+        else { const d = await res.json(); toast(`오류: ${d.error}`); }
+      });
+
+      actions.querySelector('.pa-loc')?.addEventListener('click', () => {
+        const data = popupDataMap.get(cid);
+        if (!data) return;
+        const photo = data.photos[data.currentIdx];
+        map.closePopup();
+        openLocationEditor(photo);
+      });
+    });
+
+    function renderPhotos(photos) {
+      if (map._popup) return;
+      markerLayer.clearLayers();
+      const clusters = clusterPhotos(photos);
+
+      for (const c of clusters) {
+        const isPending = c.items.every(p => p.status === 'pending');
+        const popup = L.popup({ maxWidth: 190, autopan: false }).setContent(buildPopupContent(c.items));
+        L.marker([c.lat, c.lng], { icon: isPending ? iconPending : iconApproved })
+          .bindPopup(popup)
+          .addTo(markerLayer);
+      }
+    }
+
+    let fetchTimer = null;
+    async function fetchPhotos() {
+      const b = map.getBounds();
+      const params = new URLSearchParams({
+        minLat: b.getSouth().toFixed(7),
+        maxLat: b.getNorth().toFixed(7),
+        minLng: b.getWest().toFixed(7),
+        maxLng: b.getEast().toFixed(7),
+        uid: myUid,
+      });
+      if (userRole !== 'user') params.set('includePending', '1');
+
+      try {
+        const res = await fetch(`${API}/photos?${params}`, { headers: authHeaders() });
+        if (res.ok) renderPhotos(await res.json());
+      } catch { /* ignore */ }
+    }
+
+    function scheduleFetch() {
+      clearTimeout(fetchTimer);
+      fetchTimer = setTimeout(fetchPhotos, 400);
+    }
+    map.on('moveend zoomend', scheduleFetch);
+    fetchPhotos();
+
+    /* ── Location picker map ── */
+    let pickerMap = null;
+    let pickerTile = null;
+
+    function createTile() {
+      return dark.matches
+        ? L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 })
+        : L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 });
+    }
+
+    function initPickerMap() {
+      if (pickerMap) return;
+      pickerMap = L.map('picker-map', { zoomControl: true }).setView([37.5665, 126.9780], 15);
+      pickerTile = createTile().addTo(pickerMap);
+      dark.addEventListener('change', () => {
+        pickerTile.remove();
+        pickerTile = createTile().addTo(pickerMap);
+      });
+    }
+
+    function showLocationPicker(blob, takenAt = null) {
+      locationPickerMode = 'upload';
+      pendingUpload = { blob, lat: null, lng: null, takenAt };
+      document.querySelector('#overlay-location h2').textContent = '📍 위치 지정';
+      document.getElementById('btn-confirm-location').textContent = '이 위치로 설정';
+      showOverlay('location');
+      setTimeout(() => {
+        initPickerMap();
+        pickerMap.invalidateSize();
+        navigator.geolocation?.getCurrentPosition(
+          p => pickerMap.setView([p.coords.latitude, p.coords.longitude], 17),
+          () => {}
+        );
+      }, 50);
+    }
+
+    function openLocationEditor(photo) {
+      locationPickerMode = 'edit';
+      pendingLocationEdit = photo;
+      document.querySelector('#overlay-location h2').textContent = '📍 위치 수정';
+      document.getElementById('btn-confirm-location').textContent = '이 위치로 수정';
+      showOverlay('location');
+      setTimeout(() => {
+        initPickerMap();
+        pickerMap.invalidateSize();
+        pickerMap.setView([photo.lat, photo.lng], 17);
+      }, 50);
+    }
+
+    document.getElementById('btn-cancel-location').onclick = () => {
+      hideOverlay('location');
+      if (locationPickerMode === 'upload') pendingUpload = null;
+      locationPickerMode = 'upload';
+      pendingLocationEdit = null;
+    };
+
+    document.getElementById('btn-confirm-location').onclick = async () => {
+      const center = pickerMap.getCenter();
+      hideOverlay('location');
+
+      if (locationPickerMode === 'edit') {
+        showLoading('위치 수정 중…');
+        const res = await fetch(`${API}/photos/${pendingLocationEdit.id}/move`, {
+          method: 'POST',
+          headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lat: center.lat, lng: center.lng }),
+        });
+        hideLoading();
+        if (res.ok) { toast('📍 위치가 수정됐습니다.'); fetchPhotos(); }
+        else { const d = await res.json(); toast(`오류: ${d.error}`); }
+        locationPickerMode = 'upload';
+        pendingLocationEdit = null;
+        return;
+      }
+
+      pendingUpload.lat = center.lat;
+      pendingUpload.lng = center.lng;
+      document.getElementById('location-info').textContent =
+        `📍 위도 ${center.lat.toFixed(6)}, 경도 ${center.lng.toFixed(6)} (수동 지정)`;
+      document.getElementById('btn-confirm-upload').disabled = false;
+      showOverlay('upload');
+    };
+
+    /* ── Auth helpers ── */
+    function authHeaders() {
+      return { 'X-Token': myToken };
+    }
+
+    async function refreshRole() {
+      try {
+        const res = await fetch(`${API}/me?uid=${encodeURIComponent(myUid)}`, { headers: authHeaders() });
+        if (!res.ok) { userRole = 'user'; return; }
+        const data = await res.json();
+        userRole = data.role;
+        if (data.activated) toast('⚡ 파워유저로 승격됐습니다!');
+      } catch { userRole = 'user'; }
+    }
+
+    function updateAdminBtn() {
+      document.getElementById('btn-admin').style.display = userRole !== 'user' ? 'flex' : 'none';
+    }
+
+    (async () => { await refreshRole(); updateAdminBtn(); })();
+
+    /* ── Image processing ── */
+    async function cropAndResize(file) {
+      return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+          URL.revokeObjectURL(url);
+          const size = Math.min(img.naturalWidth, img.naturalHeight);
+          const canvas = document.createElement('canvas');
+          canvas.width = canvas.height = 512;
+          canvas.getContext('2d').drawImage(
+            img,
+            (img.naturalWidth - size) / 2, (img.naturalHeight - size) / 2, size, size,
+            0, 0, 512, 512
+          );
+          canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', 0.5);
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Image decode failed')); };
+        img.src = url;
+      });
+    }
+
+    /* ── Upload flow ── */
+    document.getElementById('btn-upload').onclick = () => {
+      document.getElementById('file-input').value = '';
+      document.getElementById('file-input').click();
+    };
+
+    // Pre-fill saved name whenever upload sheet opens
+    document.getElementById('btn-upload').addEventListener('click', () => {
+      document.getElementById('upload-name').value = localStorage.getItem('pullup_name') || '';
+    }, { capture: true });
+
+    document.getElementById('file-input').onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      showLoading('이미지 처리 중…');
+      try {
+        const [exifData, blob] = await Promise.all([
+          exifr.parse(file, { gps: true, exif: true }).catch(() => null),
+          cropAndResize(file),
+        ]);
+        hideLoading();
+
+        if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+        previewObjectUrl = URL.createObjectURL(blob);
+        document.getElementById('preview-image').src = previewObjectUrl;
+
+        const gpsLat = exifData?.latitude;
+        const gpsLng = exifData?.longitude;
+        const takenAt = exifData?.DateTimeOriginal instanceof Date
+          ? exifData.DateTimeOriginal.toISOString().slice(0, 19)
+          : null;
+
+        if (!gpsLat || !gpsLng) {
+          showLocationPicker(blob, takenAt);
+          return;
+        }
+
+        pendingUpload = { blob, lat: gpsLat, lng: gpsLng, takenAt };
+        document.getElementById('location-info').textContent =
+          `📍 위도 ${gpsLat.toFixed(6)}, 경도 ${gpsLng.toFixed(6)}`;
+        document.getElementById('btn-confirm-upload').disabled = false;
+        showOverlay('upload');
+
+      } catch (err) {
+        hideLoading();
+        toast('이미지 처리 중 오류가 발생했습니다.');
+        console.error(err);
+      }
+    };
+
+    document.getElementById('btn-cancel-upload').onclick = () => hideOverlay('upload');
+
+    document.getElementById('btn-confirm-upload').onclick = async () => {
+      if (!pendingUpload) return;
+      hideOverlay('upload');
+      showLoading('업로드 중…');
+
+      try {
+        const name = document.getElementById('upload-name').value.trim().slice(0, 20);
+        if (name) localStorage.setItem('pullup_name', name);
+
+        const fd = new FormData();
+        fd.append('uid', myUid);
+        fd.append('lat', String(pendingUpload.lat));
+        fd.append('lng', String(pendingUpload.lng));
+        fd.append('name', name);
+        fd.append('taken_at', pendingUpload.takenAt ?? '');
+        fd.append('image', pendingUpload.blob, 'photo.jpg');
+
+        const res = await fetch(`${API}/photos`, { method: 'POST', headers: authHeaders(), body: fd });
+        const data = await res.json();
+
+        if (res.ok) {
+          toast(data.status === 'approved'
+            ? '✅ 업로드 완료! 지도에 바로 표시됩니다.'
+            : '📤 업로드 완료! 검토 후 지도에 표시됩니다.'
+          );
+          fetchPhotos();
+        } else {
+          toast(`오류: ${data.error}`);
+        }
+      } catch {
+        toast('업로드 중 오류가 발생했습니다.');
+      } finally {
+        hideLoading();
+        pendingUpload = null;
+      }
+    };
+
+    /* ── Admin panel ── */
+    function switchTab(tab) {
+      ['pending', 'allphotos', 'tokens'].forEach(t => {
+        document.getElementById(`tab-${t}`)?.classList.toggle('active', t === tab);
+        const s = document.getElementById(`section-${t}`);
+        if (s) s.style.display = t === tab ? '' : 'none';
+      });
+    }
+
+    document.getElementById('tab-pending').onclick   = () => switchTab('pending');
+    document.getElementById('tab-allphotos').onclick = () => { switchTab('allphotos'); loadAllPhotos(); };
+    document.getElementById('tab-tokens').onclick    = () => { switchTab('tokens'); loadTokens(); };
+
+    document.getElementById('btn-admin').onclick = () => {
+      switchTab('pending');
+      loadPending();
+      if (userRole === 'admin') document.getElementById('tab-tokens').style.display = '';
+      showOverlay('admin');
+    };
+    document.getElementById('btn-close-admin').onclick = () => hideOverlay('admin');
+
+    async function loadPending() {
+      const list = document.getElementById('pending-list');
+      list.innerHTML = '<div class="empty-msg">로딩 중…</div>';
+
+      try {
+        const res = await fetch(`${API}/photos/pending`, { headers: authHeaders() });
+        if (!res.ok) { list.innerHTML = '<div class="empty-msg" style="color:#e74c3c">오류가 발생했습니다.</div>'; return; }
+
+        const photos = await res.json();
+        if (!photos.length) { list.innerHTML = '<div class="empty-msg">대기 중인 사진이 없습니다 🎉</div>'; return; }
+
+        list.innerHTML = '';
+        for (const p of photos) {
+          const item = document.createElement('div');
+          item.className = 'pending-item';
+          item.dataset.id = p.id;
+          item.innerHTML = `
+            <img class="pending-thumb" src="${p.imageUrl}" loading="lazy" />
+            <div class="pending-meta">
+              <div class="coords">📍 ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}<br>🕐 ${formatDate(p.created_at)}<br>👤 ${p.uid.slice(0, 8)}…</div>
+              <div class="actions">
+                <button class="btn-approve" data-action="approve">✅ 승인</button>
+                <button class="btn-reject" data-action="reject">❌ 거절</button>
+                ${userRole === 'admin' ? `<button class="btn-promote" data-action="promote" data-uid="${p.uid}">⚡</button>` : ''}
+              </div>
+            </div>`;
+          list.appendChild(item);
+        }
+
+        list.onclick = async (e) => {
+          const btn = e.target.closest('[data-action]');
+          if (!btn) return;
+          const item   = btn.closest('.pending-item');
+          const id     = item.dataset.id;
+          const action = btn.dataset.action;
+
+          if (action === 'promote') {
+            const uid = btn.dataset.uid;
+            btn.disabled = true;
+            btn.textContent = '…';
+            const res = await fetch(`${API}/users/${encodeURIComponent(uid)}/promote`, { method: 'POST', headers: authHeaders() });
+            if (res.ok) {
+              btn.textContent = '✅';
+              toast('⚡ 파워유저로 지정했습니다. 다음 접속 시 활성화됩니다.');
+            } else {
+              const data = await res.json();
+              btn.disabled = false;
+              btn.textContent = '⚡';
+              toast(`오류: ${data.error}`);
+            }
+            return;
+          }
+
+          if (action === 'reject') {
+            const uid = item.querySelector('[data-uid]')?.dataset.uid || '';
+            const actionsEl = item.querySelector('.actions');
+            actionsEl.innerHTML = `
+              <input type="text" class="reject-reason-input" placeholder="거절 사유 (선택)" maxlength="100" style="flex:1" />
+              <button data-role="rc" style="padding:5px 8px;background:#e74c3c;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer;white-space:nowrap">거절 확인</button>
+              <button data-role="rx" style="padding:5px 8px;background:#f0f0f0;color:#333;border:none;border-radius:8px;font-size:12px;cursor:pointer">취소</button>`;
+            actionsEl.querySelector('.reject-reason-input').focus();
+
+            actionsEl.querySelector('[data-role="rx"]').onclick = () => {
+              actionsEl.innerHTML = `
+                <button class="btn-approve" data-action="approve">✅ 승인</button>
+                <button class="btn-reject" data-action="reject">❌ 거절</button>
+                ${userRole === 'admin' ? `<button class="btn-promote" data-action="promote" data-uid="${escHtml(uid)}">⚡</button>` : ''}`;
+            };
+
+            actionsEl.querySelector('[data-role="rc"]').onclick = async () => {
+              const reason = actionsEl.querySelector('.reject-reason-input').value.trim();
+              actionsEl.querySelectorAll('button').forEach(b => b.disabled = true);
+              actionsEl.querySelector('[data-role="rc"]').textContent = '…';
+              const res = await fetch(`${API}/photos/${id}/reject`, {
+                method: 'POST',
+                headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason }),
+              });
+              if (res.ok) {
+                item.style.transition = 'opacity 0.2s';
+                item.style.opacity = '0';
+                setTimeout(() => {
+                  item.remove();
+                  if (!list.querySelector('.pending-item'))
+                    list.innerHTML = '<div class="empty-msg">대기 중인 사진이 없습니다 🎉</div>';
+                }, 200);
+              } else {
+                actionsEl.querySelectorAll('button').forEach(b => b.disabled = false);
+                actionsEl.querySelector('[data-role="rc"]').textContent = '거절 확인';
+                toast('오류가 발생했습니다.');
+              }
+            };
+            return;
+          }
+
+          // approve
+          const allBtns = item.querySelectorAll('button');
+          allBtns.forEach(b => b.disabled = true);
+          btn.textContent = '…';
+          const res = await fetch(`${API}/photos/${id}/approve`, { method: 'POST', headers: authHeaders() });
+          if (res.ok) {
+            item.style.transition = 'opacity 0.2s';
+            item.style.opacity = '0';
+            setTimeout(() => {
+              item.remove();
+              if (!list.querySelector('.pending-item'))
+                list.innerHTML = '<div class="empty-msg">대기 중인 사진이 없습니다 🎉</div>';
+            }, 200);
+            fetchPhotos();
+          } else {
+            allBtns.forEach(b => b.disabled = false);
+            btn.textContent = '✅ 승인';
+            toast('오류가 발생했습니다.');
+          }
+        };
+
+      } catch {
+        list.innerHTML = '<div class="empty-msg" style="color:#e74c3c">오류가 발생했습니다.</div>';
+      }
+    }
+
+    /* ── All photos (admin) ── */
+    let allPhotosLastId = null;
+
+    async function loadAllPhotos(reset = true) {
+      const grid = document.getElementById('allphotos-grid');
+      const btnMore = document.getElementById('btn-load-more-photos');
+      if (reset) { grid.innerHTML = '<div class="empty-msg">로딩 중…</div>'; allPhotosLastId = null; }
+
+      const params = new URLSearchParams({ limit: '30' });
+      if (allPhotosLastId) params.set('before_id', String(allPhotosLastId));
+
+      try {
+        const res = await fetch(`${API}/admin/photos?${params}`, { headers: authHeaders() });
+        if (!res.ok) { if (reset) grid.innerHTML = '<div class="empty-msg" style="color:#e74c3c">오류가 발생했습니다.</div>'; return; }
+        const data = await res.json();
+
+        if (reset) grid.innerHTML = '';
+        if (!data.photos.length && reset) { grid.innerHTML = '<div class="empty-msg">사진이 없습니다.</div>'; btnMore.style.display = 'none'; return; }
+
+        for (const p of data.photos) {
+          const statusLabel = p.status === 'approved' ? '✅' : p.status === 'pending' ? '⏳' : '❌';
+          const item = document.createElement('div');
+          item.className = 'pg-item';
+          item.dataset.id = p.id;
+          item.innerHTML = `<img class="pg-thumb" src="${escHtml(p.imageUrl)}" loading="lazy" /><div class="pg-badge">${statusLabel}</div>`;
+          item.onclick = () => openLightbox(p);
+          grid.appendChild(item);
+        }
+
+        allPhotosLastId = data.photos.length ? data.photos.at(-1).id : null;
+        btnMore.style.display = data.hasMore ? '' : 'none';
+      } catch { if (reset) grid.innerHTML = '<div class="empty-msg" style="color:#e74c3c">오류가 발생했습니다.</div>'; }
+    }
+
+    document.getElementById('btn-load-more-photos').onclick = () => loadAllPhotos(false);
+
+    /* ── Lightbox ── */
+    let lightboxPhoto = null;
+
+    function openLightbox(photo) {
+      lightboxPhoto = photo;
+      document.getElementById('lightbox-img').src = photo.imageUrl;
+
+      const statusLabel = photo.status === 'approved' ? '✅ 승인' : photo.status === 'pending' ? '⏳ 대기' : '❌ 거절';
+      const badge = photo.uploader_role === 'admin' ? ' 👑' : photo.uploader_role === 'power' ? ' 💪' : '';
+      const dateStr = photo.taken_at || photo.created_at;
+      const reasonLine = photo.reject_reason ? `<br>거절 사유: <span style="color:#e74c3c">${escHtml(photo.reject_reason)}</span>` : '';
+
+      document.getElementById('lightbox-meta').innerHTML =
+        `${statusLabel}${reasonLine}<br>` +
+        (photo.name ? `👤 ${escHtml(photo.name)} (${(photo.uid||'').slice(0,4)})${badge}<br>` : '') +
+        (dateStr ? `📅 ${fmtDate(dateStr)}<br>` : '') +
+        `📍 ${photo.lat?.toFixed(5)}, ${photo.lng?.toFixed(5)}`;
+
+      showOverlay('lightbox');
+    }
+
+    document.getElementById('btn-close-lightbox').onclick = () => { hideOverlay('lightbox'); lightboxPhoto = null; };
+
+    document.getElementById('lightbox-btn-move').onclick = () => {
+      if (!lightboxPhoto) return;
+      hideOverlay('lightbox');
+      hideOverlay('admin');
+      openLocationEditor(lightboxPhoto);
+    };
+
+    document.getElementById('lightbox-btn-del').onclick = async () => {
+      if (!lightboxPhoto) return;
+      if (!confirm('이 사진을 삭제할까요?')) return;
+      showLoading('삭제 중…');
+      const res = await fetch(`${API}/photos/${lightboxPhoto.id}`, { method: 'DELETE', headers: authHeaders() });
+      hideLoading();
+      if (res.ok) {
+        document.querySelector(`#allphotos-grid .pg-item[data-id="${lightboxPhoto.id}"]`)?.remove();
+        hideOverlay('lightbox');
+        fetchPhotos();
+        toast('🗑️ 삭제됐습니다.');
+        lightboxPhoto = null;
+      } else {
+        const d = await res.json();
+        toast(`오류: ${d.error}`);
+      }
+    };
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && lightboxPhoto) { hideOverlay('lightbox'); lightboxPhoto = null; }
+    });
+
+    /* ── Token management ── */
+    async function loadTokens() {
+      const list = document.getElementById('token-list');
+      list.innerHTML = '<div class="empty-msg">로딩 중…</div>';
+
+      try {
+        const res = await fetch(`${API}/tokens`, { headers: authHeaders() });
+        if (!res.ok) { list.innerHTML = '<div class="empty-msg" style="color:#e74c3c">오류가 발생했습니다.</div>'; return; }
+
+        const tokens = await res.json();
+        if (!tokens.length) { list.innerHTML = '<div class="empty-msg">등록된 토큰이 없습니다.</div>'; return; }
+
+        list.innerHTML = '';
+        for (const t of tokens) {
+          const isMine    = t.uid === myUid;
+          const roleLabel = t.role === 'admin' ? '👑 관리자' : '⚡ 파워유저';
+          const statusLabel = t.status === 'active' ? '활성' : '⏳ 대기';
+          const item = document.createElement('div');
+          item.className = 'token-item';
+          item.dataset.id = t.id;
+          item.innerHTML = `
+            <div class="token-item-info">
+              <div class="token-item-memo">${roleLabel} <span style="font-size:12px;color:#888">${statusLabel}</span></div>
+              <div class="token-item-val">👤 ${t.uid.slice(0, 8)}…</div>
+            </div>
+            <button class="token-item-del" ${isMine ? 'disabled title="현재 사용 중"' : ''}>삭제</button>`;
+          list.appendChild(item);
+        }
+
+        list.onclick = async (e) => {
+          const btn = e.target.closest('.token-item-del');
+          if (!btn || btn.disabled) return;
+          const item = btn.closest('.token-item');
+          const id   = item.dataset.id;
+          if (!confirm('이 토큰을 삭제하면 해당 사용자는 더 이상 로그인할 수 없습니다. 삭제할까요?')) return;
+
+          btn.disabled = true;
+          btn.textContent = '…';
+          const res = await fetch(`${API}/tokens/${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders() });
+          if (res.ok) {
+            item.style.transition = 'opacity 0.2s';
+            item.style.opacity = '0';
+            setTimeout(() => {
+              item.remove();
+              if (!list.querySelector('.token-item')) list.innerHTML = '<div class="empty-msg">등록된 토큰이 없습니다.</div>';
+            }, 200);
+          } else {
+            btn.disabled = false;
+            btn.textContent = '삭제';
+            toast('삭제에 실패했습니다.');
+          }
+        };
+
+      } catch {
+        list.innerHTML = '<div class="empty-msg" style="color:#e74c3c">오류가 발생했습니다.</div>';
+      }
+    }
+
+    function escHtml(str) {
+      return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function formatDate(str) {
+      return new Date(str + 'Z').toLocaleString('ko-KR', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
+    }
+
+    document.getElementById('title-bar').onclick = () => showOverlay('info');
+    document.getElementById('btn-close-info').onclick = () => hideOverlay('info');
+
+    if (isFirstVisit) showOverlay('info');
+
+    /* ── Overlay helpers ── */
+    function showOverlay(name) { document.getElementById(`overlay-${name}`).style.display = 'flex'; }
+    function hideOverlay(name) { document.getElementById(`overlay-${name}`).style.display = 'none'; }
+
+    document.querySelectorAll('.overlay').forEach(el => {
+      el.addEventListener('click', e => { if (e.target === el) el.style.display = 'none'; });
+    });
+
+    /* ── Toast ── */
+    let toastTimer = null;
+    function toast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.remove('show'), 3200);
+    }
+
+    /* ── Loading ── */
+    function showLoading(msg = '처리 중…') {
+      document.getElementById('loading-msg').textContent = msg;
+      document.getElementById('loading').classList.add('show');
+    }
+    function hideLoading() {
+      document.getElementById('loading').classList.remove('show');
+    }
+  </script>
+</body>
+</html>

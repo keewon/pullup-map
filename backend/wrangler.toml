@@ -1,0 +1,19 @@
+name = "pullup-map-api"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+routes = [
+  { pattern = "pull-up-api.acidblob.com", custom_domain = true }
+]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pullup-map-db"
+database_id = "dd67432e-50c0-40db-bfc0-9c98da384a3d"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "pullup-map-images"
+
+[vars]
+R2_PUBLIC_URL = "https://pub-78007e96482b431a98f36ea6b1f66fca.r2.dev"
