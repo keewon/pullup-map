@@ -662,6 +662,7 @@
         <button class="btn btn-blue" id="lightbox-btn-move">📍 위치 수정</button>
         <button class="btn btn-red" id="lightbox-btn-del">🗑️ 삭제</button>
       </div>
+      <button class="btn btn-full" id="lightbox-btn-promote" style="margin-top:8px;background:#f39c12;color:#fff">⚡ 파워유저로 승급</button>
       <button class="btn btn-grey btn-full" id="btn-close-lightbox" style="margin-top:8px">닫기</button>
     </div>
   </div>
@@ -677,9 +678,23 @@
   <!-- Toast -->
   <div id="toast"></div>
 
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-analytics-compat.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.umd.js"></script>
   <script>
+    /* ── Firebase Analytics ── */
+    firebase.initializeApp({
+      apiKey: "AIzaSyC02VvJ7wIXfH_YTKQARRlPUYvozrevg1Y",
+      authDomain: "pullup-map.firebaseapp.com",
+      projectId: "pullup-map",
+      storageBucket: "pullup-map.firebasestorage.app",
+      messagingSenderId: "762376414337",
+      appId: "1:762376414337:web:7f10ec014d09d05dcb9980",
+      measurementId: "G-V4WCC8QZZM"
+    });
+    const analytics = firebase.analytics();
+
     /* ── Config ── */
     const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
       ? 'http://localhost:8787'
@@ -742,6 +757,7 @@
     }
 
     document.getElementById('btn-locate').onclick = () => {
+      analytics.logEvent('locate_me');
       const zoom = map.getZoom();
       navigator.geolocation?.getCurrentPosition(
         p => map.setView([p.coords.latitude, p.coords.longitude], zoom),
@@ -839,6 +855,10 @@
            </div>` : ''}
       </div>`;
     }
+
+    map.on('popupopen', () => {
+      analytics.logEvent('marker_click');
+    });
 
     map.on('popupopen', e => {
       const popupEl = e.popup.getElement();
@@ -1062,6 +1082,7 @@
 
     /* ── Upload flow ── */
     document.getElementById('btn-upload').onclick = () => {
+      analytics.logEvent('upload_start');
       document.getElementById('file-input').value = '';
       document.getElementById('file-input').click();
     };
@@ -1134,12 +1155,14 @@
         const data = await res.json();
 
         if (res.ok) {
+          analytics.logEvent('photo_upload', { status: data.status });
           toast(data.status === 'approved'
             ? '✅ 업로드 완료! 지도에 바로 표시됩니다.'
             : '📤 업로드 완료! 검토 후 지도에 표시됩니다.'
           );
           fetchPhotos();
         } else {
+          analytics.logEvent('photo_upload_error');
           toast(`오류: ${data.error}`);
         }
       } catch {
@@ -1250,6 +1273,7 @@
                 body: JSON.stringify({ reason }),
               });
               if (res.ok) {
+                analytics.logEvent('admin_reject');
                 item.style.transition = 'opacity 0.2s';
                 item.style.opacity = '0';
                 setTimeout(() => {
@@ -1272,6 +1296,7 @@
           btn.textContent = '…';
           const res = await fetch(`${API}/photos/${id}/approve`, { method: 'POST', headers: authHeaders() });
           if (res.ok) {
+            analytics.logEvent('admin_approve');
             item.style.transition = 'opacity 0.2s';
             item.style.opacity = '0';
             setTimeout(() => {
@@ -1346,10 +1371,34 @@
         (dateStr ? `📅 ${fmtDate(dateStr)}<br>` : '') +
         `📍 ${photo.lat?.toFixed(5)}, ${photo.lng?.toFixed(5)}`;
 
+      const promoteBtn = document.getElementById('lightbox-btn-promote');
+      promoteBtn.style.display = userRole === 'admin' ? '' : 'none';
+      promoteBtn.disabled = false;
+      promoteBtn.textContent = '⚡ 파워유저로 승급';
+
       showOverlay('lightbox');
     }
 
     document.getElementById('btn-close-lightbox').onclick = () => { hideOverlay('lightbox'); lightboxPhoto = null; };
+
+    document.getElementById('lightbox-btn-promote').onclick = async () => {
+      if (!lightboxPhoto) return;
+      const uid = lightboxPhoto.uid;
+      if (!uid) return;
+      const btn = document.getElementById('lightbox-btn-promote');
+      btn.disabled = true;
+      btn.textContent = '…';
+      const res = await fetch(`${API}/users/${encodeURIComponent(uid)}/promote`, { method: 'POST', headers: authHeaders() });
+      if (res.ok) {
+        btn.textContent = '✅ 승급 완료';
+        toast('⚡ 파워유저로 지정했습니다. 다음 접속 시 활성화됩니다.');
+      } else {
+        const data = await res.json();
+        btn.disabled = false;
+        btn.textContent = '⚡ 파워유저로 승급';
+        toast(`오류: ${data.error}`);
+      }
+    };
 
     document.getElementById('lightbox-btn-move').onclick = () => {
       if (!lightboxPhoto) return;
@@ -1402,7 +1451,7 @@
           item.dataset.id = t.id;
           item.innerHTML = `
             <div class="token-item-info">
-              <div class="token-item-memo">${roleLabel} <span style="font-size:12px;color:#888">${statusLabel}</span></div>
+              <div class="token-item-memo">${roleLabel} ${t.name ? escHtml(t.name) : '<span style="color:#aaa">이름없음</span>'} <span style="font-size:12px;color:#888">${statusLabel}</span></div>
               <div class="token-item-val">👤 ${t.uid.slice(0, 8)}…</div>
             </div>
             <button class="token-item-del" ${isMine ? 'disabled title="현재 사용 중"' : ''}>삭제</button>`;

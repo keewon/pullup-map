@@ -424,9 +424,14 @@ async function handlePromote(request: Request, env: Env, uid: string): Promise<R
     .bind(uid).first();
   if (existing) return json({ error: '이미 권한이 있는 사용자입니다.' }, 409);
 
+  const photoName = await env.DB.prepare(
+    `SELECT name FROM photos WHERE uid = ? AND name != '' ORDER BY created_at ASC LIMIT 1`
+  ).bind(uid).first<{ name: string }>();
+  const name = photoName?.name ?? '';
+
   await env.DB.prepare(
-    `INSERT INTO tokens (id, uid, token, role, name, status) VALUES (?, ?, NULL, 'power', '', 'pending')`
-  ).bind(crypto.randomUUID(), uid).run();
+    `INSERT INTO tokens (id, uid, token, role, name, status) VALUES (?, ?, NULL, 'power', ?, 'pending')`
+  ).bind(crypto.randomUUID(), uid, name).run();
 
   return json({ success: true });
 }
